@@ -1,0 +1,17 @@
+set terminal pdf enhanced mono font "Times-Roman,14"
+set output "Fig5.pdf"
+set yrange [0.0:10.0]
+set auto x
+set xtics nomirror scale 0
+set xlabel "Attacker Data Bank"
+set ylabel "Slowdown" offset 0.5
+set nokey
+
+set style data histogram
+set style histogram cluster gap 1.5
+set style fill pattern border
+
+set arrow from 3.5,0 to 3.5,10 nohead dt "-"
+
+set boxwidth 1
+plot  "Fig5.dat"  u 2:xticlabel(1)

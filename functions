@@ -1,0 +1,108 @@
+#!/bin/bash
+
+# References to the synthetic benchmarks
+BW=workloads/Bw
+PLL=workloads/PLL
+BKPLL=workloads/BkPLL
+
+# Performance counters for measuring LLC statistics
+count=armv8_cortex_a72/l2d_cache_refill/,armv8_cortex_a72/l2d_cache/	# For Pi 4
+#count=armv8_pmuv3/l2d_cache_refill/,armv8_pmuv3/l2d_cache/				# For Jetson Nano
+
+# LLC partitions for the victim and attacker workloads
+vpart=part5
+cpart=part6
+
+function BwReadVictimSolo() {
+	echo $$ > /sys/fs/cgroup/palloc/$vpart/tasks
+
+	output=`chrt -f 1 perf stat -e $count $BW -c 0 -m $1 -i $2 -t 0 -a $vtype 2>&1` 
+	solo=`echo "$output" | grep average | awk 'NF{ print $(NF-7) }'`
+	sololat=`echo "$output" | grep average | awk 'NF{ print $(NF-1) }'`
+	l2misses=`echo "$output" | grep "l2d_cache_refill/" | awk '{ print $1 }' | sed 's/,//g'`
+	l2loads=`echo "$output" | grep "l2d_cache/" | awk '{ print $1 }' | sed 's/,//g'`
+	l2missrate=`bc <<< "scale=2; $l2misses*100/$l2loads"`
+	echo "Solo, $solo, $sololat, 1.00, $l2misses, $l2loads, $l2missrate"
+}
+
+function BwReadVictimCorun() {
+	echo $$ > /sys/fs/cgroup/palloc/$vpart/tasks
+
+	output=`chrt -f 1 perf stat -e $count $BW -c 0 -m $1 -i $2 -t 0 -a $vtype 2>&1`
+	bw=`echo "$output" | grep average | awk 'NF{ print $(NF-7) }'`
+	lat=`echo "$output" | grep average | awk 'NF{ print $(NF-1) }'`
+	slowdown=`bc <<< "scale=2; $solo/$bw"`
+	l2misses=`echo "$output" |  grep "l2d_cache_refill/" | awk '{ print $1 }' | sed 's/,//g'`
+	l2loads=`echo "$output" | grep "l2d_cache/" | awk '{ print $1 }' | sed 's/,//g'`
+	l2missrate=`bc <<< "scale=2; $l2misses*100/$l2loads"`
+	echo "$corunName, $bw, $lat, $slowdown, $l2misses, $l2loads, $l2missrate"
+}
+
+function BkPLLVictimSolo() {
+	echo $$ > /sys/fs/cgroup/palloc/$vpart/tasks
+
+	output=`chrt -f 1 perf stat -e $count $BKPLL -c 0 -m $1 -i $2 -l 6 -e 1 -b 0x70 2>&1` 
+	solo=`echo "$output" | grep bandwidth | awk 'NF{ print $(NF-1) }'`
+	sololat=`echo "$output" | grep latency | awk 'NF{ print $(NF-1) }'`
+	l2misses=`echo "$output" | grep "l2d_cache_refill/" | awk '{ print $1 }' | sed 's/,//g'`
+	l2loads=`echo "$output" | grep "l2d_cache/" | awk '{ print $1 }' | sed 's/,//g'`
+	l2missrate=`bc <<< "scale=2; $l2misses*100/$l2loads"`
+	echo "Solo, $solo, $sololat, 1.00, $l2misses, $l2loads, $l2missrate"
+}
+
+function BkPLLVictimCorun() {
+	echo $$ > /sys/fs/cgroup/palloc/$vpart/tasks
+
+	output=`chrt -f 1 perf stat -e $count $BKPLL -c 0 -m $1 -i $2 -l 6 -e 1 -b 0x70 2>&1` 
+	bw=`echo "$output" | grep bandwidth | awk 'NF{ print $(NF-1) }'`
+	lat=`echo "$output" | grep bandwidth | awk 'NF{ print $(NF-1) }'`
+	slowdown=`bc <<< "scale=2; $solo/$bw"`
+	l2misses=`echo "$output" |  grep "l2d_cache_refill/" | awk '{ print $1 }' | sed 's/,//g'`
+	l2loads=`echo "$output" | grep "l2d_cache/" | awk '{ print $1 }' | sed 's/,//g'`
+	l2missrate=`bc <<< "scale=2; $l2misses*100/$l2loads"`
+	echo "$corunName, $bw, $lat, $slowdown, $l2misses, $l2loads, $l2missrate"
+}
+
+function BwWriteCorun() {
+	echo $$ > /sys/fs/cgroup/palloc/$cpart/tasks
+    
+    corun=$BW
+    corunName="Bw${ctypestr}($1)"
+
+	for ((i=1; i<4; i++)); do
+		$corun -c $i -m $1 -a $ctype -t 0 &> /dev/null &
+	done
+}
+
+function PLLWriteCorun() {
+	echo $$ > /sys/fs/cgroup/palloc/$cpart/tasks
+
+    corun=$PLL
+    corunName="PLL${ctypestr}(${1})"
+
+	for ((i=1; i<4; i++)); do
+		$corun -c $i -m $1 -a $ctype -l 6 -i 99999999 &> /dev/null &
+	done
+}
+
+function BkPLLWriteCorun() {
+	echo $$ > /sys/fs/cgroup/palloc/$cpart/tasks
+	
+    corun=$BKPLL
+    corunName="BkPLL${ctypestr}(${1})"
+
+    for ((i=1; i<4; i++)); do
+		$corun -c $i -m $1 -a $ctype -l 6 -i 99999999 -e $2 -b 0x70 &> /dev/null &
+	done
+}
+
+function BkPLLWriteCorunVary() {
+	echo $$ > /sys/fs/cgroup/palloc/$cpart/tasks
+
+	corun=$BKPLL
+    corunName="BkPLL${ctypestr}(${1})"
+
+    for ((i=$2; i<4; i++)); do
+		$corun -c $i -m $1 -a $ctype -l 6 -i 99999999 -e $3 -b 0x70 &> /dev/null &
+	done
+}

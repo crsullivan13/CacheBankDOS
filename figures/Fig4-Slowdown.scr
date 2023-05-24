@@ -1,0 +1,23 @@
+set terminal pdf enhanced mono font "Times-Roman,14"
+set output "Fig4-Slowdown.pdf"
+set yrange [0.0:10.0]
+set auto x
+set xtics nomirror scale 0
+set xlabel "WSS (KB)"
+set ylabel "Slowdown" offset 0.5
+set key top left font ",12" maxrows 3
+
+set style data histogram
+set style histogram cluster gap 1.5
+set style fill pattern border
+
+set arrow from -1,1 to 7,1 nohead dt "-"
+set arrow from 4.5,0 to 4.5,10 nohead dt "-"
+
+set boxwidth 1
+plot  "Fig4-Slowdown.dat"  u 2:xticlabel(1) title "Solo",\
+	  ""                  using 3 title "BwWrite(LLC)" lt -1,\
+      ""                  using 4 title "PLLWrite(LLC)" lt -1,\
+	  ""                  using 7 title "BkPLLWrite(LLC)" lt -1,\
+      ""                  using 5 title "BwWrite(DRAM)" lt -1,\
+      ""                  using 6 title "PLLWrite(DRAM)" lt -1
