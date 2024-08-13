@@ -1,6 +1,6 @@
 CC=gcc
 CXX=g++
-PGMS=Bw PLL BkPLL
+PGMS=Bw PLL
 
 CFLAGS=-O2 -Wall -g
 CXXFLAGS=$(CFLAGS)
@@ -11,8 +11,6 @@ all: $(PGMS)
 Bw: Bw.o
 	$(CXX) $(CFLAGS) $(LDFLAGS) $< -o $@
 PLL: PLL.o
-	$(CXX) $(CFLAGS) $(LDFLAGS) $< -o $@
-BkPLL: BkPLL.o
 	$(CXX) $(CFLAGS) $(LDFLAGS) $< -o $@
 
 install:
