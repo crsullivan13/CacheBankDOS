@@ -34,7 +34,7 @@
 /**************************************************************************
  * Public Definitions
  **************************************************************************/
-#define CACHE_LINE_SIZE 128	   /* cache Line size is 64 byte */
+#define CACHE_LINE_SIZE 64	   /* cache Line size is 64 byte */
 #ifdef __arm__
 #  define DEFAULT_ALLOC_SIZE_KB 4096
 #else

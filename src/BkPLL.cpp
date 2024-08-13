@@ -37,11 +37,15 @@
 #include <sys/resource.h>
 #include <assert.h>
 
+extern "C" { 
+	#include "util.h" 
+}
+
 /**************************************************************************
  * Public Definitions
  **************************************************************************/
 #define MAX_MLP 32
-#define CACHE_LINE_SIZE 16
+#define STRIDE_SIZE 64
 #ifdef __arm__
 #  define DEFAULT_ALLOC_SIZE_KB 4096
 #else
@@ -74,6 +78,8 @@ static int next[MAX_MLP];
 static int g_debug = 0;
 static int g_color[MAX_COLORS]; // not assigned
 static int g_color_cnt = 0;
+
+bool g_xor_mapping = false;
 
 // static unsigned long dram_bitmask = 0x1e000; // 16|15,14,13,--| : xu4 (cortex-a15)
 static unsigned long dram_bitmask = 0x7800;  // --,14,13,12|11  : pi4 (cortex-a72)
@@ -195,6 +201,27 @@ int paddr_to_color(unsigned long mask, unsigned long paddr)
 	for_each_set_bit(c, &mask, BITS_PER_LONG) {
 		if ((paddr >> (c)) & 0x1)
 			color |= (1<<idx);
+		idx++;
+	}
+	return color;
+}
+
+int paddr_to_color_xor(unsigned long long paddr)
+{
+    static const int h0[] = {6,  10, 12, 14, 16, 17, 18, 20, 22, 24,
+                             25, 26, 27, 28, 30, 32, 33, 35, 36};
+    static const int h1[] = {7,  11, 13, 15, 17, 19, 20, 21, 22, 23,
+                             24, 26, 28, 29, 31, 33, 34, 35, 37};
+	static const int* masks[] = {h0, h1};
+
+	int color = 0;
+	int temp = 0;
+	int idx = 0;
+	for(int i = 0; i < 2; i++) {
+		for(int j = 0; j < (int)(sizeof(h0)/sizeof(int)); j++) {
+			temp ^= (paddr >> masks[i][j]) & 1;		
+		}
+		color |= (temp << idx);
 		idx++;
 	}
 	return color;
@@ -413,10 +440,13 @@ int main(int argc, char* argv[])
 	/*
 	 * get command line options 
 	 */
-	while ((opt = getopt(argc, argv, "m:a:c:d:e:b:i:l:hx")) != -1) {
+	while ((opt = getopt(argc, argv, "m:a:c:d:e:b:i:l:h:xz")) != -1) {
 		switch (opt) {
 		case 'm': /* set memory size */
 			g_mem_size = 1024 * strtol(optarg, NULL, 0);
+			break;
+		case 'z':
+			g_xor_mapping = true;
 			break;
 		case 'a': /* set access type */
 			if (!strcmp(optarg, "read"))
@@ -489,7 +519,7 @@ int main(int argc, char* argv[])
 	srand(0);
 
 	int ws = 0;
-	int orig_ws = (g_mem_size / CACHE_LINE_SIZE);
+	int orig_ws = (g_mem_size / STRIDE_SIZE);
 
 	printf("orig_ws: %d  mlp: %d\n", orig_ws, mlp);
 	
@@ -518,18 +548,26 @@ int main(int argc, char* argv[])
 	/* initialize data */
 	memset(memchunk, 0, g_mem_size);
 
+	char buf[] = "/proc/self/pagemap";
+
 	// set some values:
 	for (int i=0; i<orig_ws; i++) {
-		ulong vaddr = (ulong)&memchunk[i*CACHE_LINE_SIZE/4];
+		ulong vaddr = (ulong)&memchunk[i*STRIDE_SIZE/4];
 
 		if (g_color_cnt > 0) {
 			/* use coloring */
 			for (int j = 0; j < g_color_cnt; j++) {
-				if (paddr_to_color(dram_bitmask, vaddr) == g_color[j]) {
+				if (!g_xor_mapping && paddr_to_color(dram_bitmask, vaddr) == g_color[j]) {
 					if (g_debug)
 						printf("vaddr: %p color: %d\n",
 						       (void *)vaddr,
 						       paddr_to_color(dram_bitmask, vaddr));
+					myvector.push_back(i);
+				} else if (g_xor_mapping && paddr_to_color_xor(read_pagemap(buf,(uintptr_t)vaddr)) == g_color[j]) {
+					if (g_debug)
+						printf("vaddr: %p color: %d\n",
+						       (void *)read_pagemap(buf,(uintptr_t)vaddr),
+						       paddr_to_color_xor(read_pagemap(buf,(uintptr_t)vaddr)));
 					myvector.push_back(i);
 				}
 			}
@@ -550,20 +588,20 @@ int main(int argc, char* argv[])
 	
 	for (i = 0; i < ws; i++) {
 		int l = i / list_len;
-		int curr_idx = myvector[i] * CACHE_LINE_SIZE / 4;
-		int next_idx = myvector[i+1] * CACHE_LINE_SIZE / 4;
+		int curr_idx = myvector[i] * STRIDE_SIZE / 4;
+		int next_idx = myvector[i+1] * STRIDE_SIZE / 4;
 		if ((i+1) % list_len == 0)
-			next_idx = myvector[i/list_len*list_len] * CACHE_LINE_SIZE / 4;
+			next_idx = myvector[i/list_len*list_len] * STRIDE_SIZE / 4;
 		
 		memchunk[curr_idx] = next_idx;
 		
 		if (i % list_len == 0) {
 			list[l] = memchunk;
 			next[l] = curr_idx;
-			printf("list[%d]  %d\n", l,  next[l] * 4 / CACHE_LINE_SIZE);
+			printf("list[%d]  %d\n", l,  next[l] * 4 / STRIDE_SIZE);
 		}
 		
-		// printf("%8d ->%8d\n", myvector[i], next_idx*4/CACHE_LINE_SIZE);
+		// printf("%8d ->%8d\n", myvector[i], next_idx*4/STRIDE_SIZE);
 	}
 	
 	if (use_hugepage) printf("Using hugetlb\n");
@@ -578,8 +616,8 @@ int main(int argc, char* argv[])
 	clock_gettime(CLOCK_REALTIME, &end);
 	printf("Init took %.0f us\n", (double) get_elapsed(&start, &end)/1000);
 
-
 	long naccess;
+	//start_counters();
 	clock_gettime(CLOCK_REALTIME, &start);
 	/* actual access */
 	if (acc_type == READ)
@@ -587,12 +625,13 @@ int main(int argc, char* argv[])
 	else
 		naccess = run_write((int64_t)repeat * list_len, mlp);
 	clock_gettime(CLOCK_REALTIME, &end);
+	//end_counters();
 
 	int64_t nsdiff = get_elapsed(&start, &end);
 	double  avglat = (double)nsdiff/naccess;
 
 	printf("alloc. size: %d (%d KB)\n", g_mem_size, g_mem_size/1024);
-	int total_ws =  ws * CACHE_LINE_SIZE;
+	int total_ws =  ws * STRIDE_SIZE;
 	printf("ws size: %d (%d KB)\n", total_ws, total_ws / 1024);
 	printf("duration %.0f ns, #access %ld\n", (double)nsdiff, naccess);
 	printf("Avg. latency %.2f ns\n", avglat);	
