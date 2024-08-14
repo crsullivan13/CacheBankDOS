@@ -79,6 +79,9 @@ static int g_debug = 0;
 static int g_color[MAX_COLORS]; // not assigned
 static int g_color_cnt = 0;
 
+static int g_set_color[8];
+static int g_set_color_cnt = 0;
+
 bool g_xor_mapping = false;
 
 // static unsigned long dram_bitmask = 0x1e000; // 16|15,14,13,--| : xu4 (cortex-a15)
@@ -440,7 +443,7 @@ int main(int argc, char* argv[])
 	/*
 	 * get command line options 
 	 */
-	while ((opt = getopt(argc, argv, "m:a:c:d:e:b:i:l:h:xz")) != -1) {
+	while ((opt = getopt(argc, argv, "m:a:c:d:e:f:b:i:l:h:xz")) != -1) {
 		switch (opt) {
 		case 'm': /* set memory size */
 			g_mem_size = 1024 * strtol(optarg, NULL, 0);
@@ -477,6 +480,9 @@ int main(int argc, char* argv[])
 			break;
 		case 'e': /* select color (dram bank) */
 			g_color[g_color_cnt++] = strtol(optarg, NULL, 0);
+			break;
+		case 'f':
+			g_set_color[g_set_color_cnt++] = strtol(optarg, NULL, 0);
 			break;	
 		case 'p': /* set priority */
 			prio = strtol(optarg, NULL, 0);
@@ -564,11 +570,17 @@ int main(int argc, char* argv[])
 						       paddr_to_color(dram_bitmask, vaddr));
 					myvector.push_back(i);
 				} else if (g_xor_mapping && paddr_to_color_xor(read_pagemap(buf,(uintptr_t)vaddr)) == g_color[j]) {
-					if (g_debug)
-						printf("vaddr: %p color: %d\n",
-						       (void *)read_pagemap(buf,(uintptr_t)vaddr),
-						       paddr_to_color_xor(read_pagemap(buf,(uintptr_t)vaddr)));
-					myvector.push_back(i);
+					if (g_set_color_cnt > 0) {
+						if ( paddr_to_color(dram_bitmask, read_pagemap(buf,(uintptr_t)vaddr)) == g_set_color[j] ) {
+							if (g_debug)
+								printf("paddr: %p color: %d\n",
+									(void *)read_pagemap(buf,(uintptr_t)vaddr),
+									paddr_to_color(dram_bitmask, read_pagemap(buf,(uintptr_t)vaddr)));
+							myvector.push_back(i);
+						}	
+					} else {
+						myvector.push_back(i);	
+					}
 				}
 			}
 		} else {
