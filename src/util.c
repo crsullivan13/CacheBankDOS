@@ -99,8 +99,8 @@ uintptr_t read_pagemap(char *path_buf, uintptr_t virt_addr) {
     return phys_addr;
 }
 
-int partition(int a[], int l, int r) {
-    int pivot, i, j, t;
+unsigned long long partition(unsigned long long a[], unsigned long long l, unsigned long long r) {
+    unsigned long long pivot, i, j, t;
     pivot = a[l];
     i = l;
     j = r + 1;
@@ -125,8 +125,8 @@ int partition(int a[], int l, int r) {
     return j;
 }
 
-void quicksort(int a[], int l, int r) {
-    int j;
+void quicksort(unsigned long long a[], unsigned long long l, unsigned long long r) {
+    unsigned long long j;
     if (l < r) {
         // divide and conquer
         j = partition(a, l, r);
@@ -134,6 +134,8 @@ void quicksort(int a[], int l, int r) {
         quicksort(a, j + 1, r);
     }
 }
+
+unsigned long long cboxes[4];
 
 void start_counters() {
     int i;
@@ -169,48 +171,33 @@ void start_counters() {
     val[0] = val_enable_ctrs;
     // val[0] = val_enable_ctrs;
     wrmsr_on_cpu_0(msr_unc_perf_global_ctr, 1, val);
+
+    for (i = 0; i < nb_cores; i++) {
+        //printf("res temp %llu\n", res_temp);
+        cboxes[i] = rdmsr_on_cpu_0(msr_unc_cbo_per_ctr0[i]);
+    }
 }
 
 
 int end_counters() {
     int i = 0;
-    int nb_pokes = 100000;
 
-    int *cboxes = calloc(max_slices, sizeof(int));
-    int *cboxes_tri = calloc(max_slices, sizeof(int));
-    int res_temp;
+    unsigned long long res_temp;
     for (i = 0; i < nb_cores; i++) {
         res_temp = rdmsr_on_cpu_0(msr_unc_cbo_per_ctr0[i]);
-        printf("res temp %d\n", res_temp);
-        cboxes[i] = ((res_temp - nb_pokes) < 0) ? 0 : res_temp - nb_pokes;
-        cboxes_tri[i] = ((res_temp - nb_pokes) < 0) ? 0 : res_temp - nb_pokes;
+        //printf("res temp %llu\n", res_temp);
+        cboxes[i] = (res_temp - cboxes[i]);
     }
 
     int slice = 0;
-    int first = 0;
-    int second = 0;
-    float percent;
-
-    // Interpreting the results
-    //
 
     // Finding the slice in which the address is
-    for (i = 0; i < max_slices; i++) {
-        printf("Slice %d %d\n", i, cboxes[i]);
+    for (i = 0; i < 4; i++) {
+        printf("Slice %d %llu\n", i, cboxes[i]);
         if (cboxes[i] > cboxes[slice]) {
             slice = i;
         }
     }
-
-    // Calculate the ratio between the first and the second result
-    // to estimate the error
-    quicksort(cboxes_tri, 0, max_slices - 1);
-    first = cboxes_tri[max_slices - 1];
-    second = cboxes_tri[max_slices - 2];
-    percent = ((float)second) / ((float)first) * 100;
-
-    free(cboxes);
-    free(cboxes_tri);
 
     return slice;
 }

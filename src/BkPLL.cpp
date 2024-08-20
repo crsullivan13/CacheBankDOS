@@ -443,7 +443,7 @@ int main(int argc, char* argv[])
 	/*
 	 * get command line options 
 	 */
-	while ((opt = getopt(argc, argv, "m:a:c:d:e:f:b:i:l:h:xz")) != -1) {
+	while ((opt = getopt(argc, argv, "m:a:c:d:e:s:b:i:l:h:xz")) != -1) {
 		switch (opt) {
 		case 'm': /* set memory size */
 			g_mem_size = 1024 * strtol(optarg, NULL, 0);
@@ -481,7 +481,7 @@ int main(int argc, char* argv[])
 		case 'e': /* select color (dram bank) */
 			g_color[g_color_cnt++] = strtol(optarg, NULL, 0);
 			break;
-		case 'f':
+		case 's':
 			g_set_color[g_set_color_cnt++] = strtol(optarg, NULL, 0);
 			break;	
 		case 'p': /* set priority */
@@ -579,6 +579,10 @@ int main(int argc, char* argv[])
 							myvector.push_back(i);
 						}	
 					} else {
+						if (g_debug)
+							printf("paddr: %p color: %d\n",
+								(void *)read_pagemap(buf,(uintptr_t)vaddr),
+								paddr_to_color_xor(read_pagemap(buf,(uintptr_t)vaddr)));
 						myvector.push_back(i);	
 					}
 				}
@@ -629,15 +633,15 @@ int main(int argc, char* argv[])
 	printf("Init took %.0f us\n", (double) get_elapsed(&start, &end)/1000);
 
 	long naccess;
-	//start_counters();
 	clock_gettime(CLOCK_REALTIME, &start);
+	//start_counters();
 	/* actual access */
 	if (acc_type == READ)
 		naccess = run((int64_t)repeat * list_len, mlp);
 	else
 		naccess = run_write((int64_t)repeat * list_len, mlp);
-	clock_gettime(CLOCK_REALTIME, &end);
 	//end_counters();
+	clock_gettime(CLOCK_REALTIME, &end);
 
 	int64_t nsdiff = get_elapsed(&start, &end);
 	double  avglat = (double)nsdiff/naccess;

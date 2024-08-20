@@ -22,8 +22,8 @@
 
 #include <stdint.h>
 
-int partition(int a[], int l, int r);
-void quicksort(int a[], int l, int r);
+unsigned long long partition(unsigned long long a[], unsigned long long l, unsigned long long r);
+void quicksort(unsigned long long a[], unsigned long long l, unsigned long long r);
 uintptr_t read_pagemap(char *path_buf, uintptr_t virt_addr);
 void start_counters();
 int end_counters();
